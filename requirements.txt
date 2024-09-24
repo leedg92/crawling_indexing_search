@@ -1,0 +1,13 @@
+pandas
+elasticsearch
+sentence-transformers
+spacy
+fastapi
+pydantic
+textblob
+uvicorn
+googletrans==3.1.0a0
+numpy
+scikit-learn
+selenium
+webdriver-manager
