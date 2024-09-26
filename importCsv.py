@@ -1,12 +1,15 @@
 import csv
 import sqlite3
 import warnings
-import sys
 from pathlib import Path
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
-from config import DB_PATH
+from config import DB_PATH, API_HOST, IMPORT_API_PORT
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+app = FastAPI()
 
 #컬럼 추론
 def guess_type(value):
@@ -35,8 +38,7 @@ def infer_column_types(csv_path, sample_size=1000):
             except StopIteration:
                 break
     
-    return {header: max(types) if "TEXT" in types else min(types) 
-            for header, types in column_types.items()}
+    return {header: max(types) if "TEXT" in types else min(types) for header, types in column_types.items()}
 
 def import_csv_to_db(csv_path, table_name, conn, cursor):
     total_rows = 0
@@ -46,9 +48,10 @@ def import_csv_to_db(csv_path, table_name, conn, cursor):
         csvreader = csv.reader(csvfile)
         headers = next(csvreader)
         
-        # 테이블 생성 쿼리
+        # 테이블 생성 쿼리 
         create_table_query = f'''
         CREATE TABLE IF NOT EXISTS {table_name} (
+            el_pri_key INTEGER PRIMARY KEY AUTOINCREMENT,
             {', '.join([f"{header} {column_types[header]}" for header in headers])}
         )
         '''
@@ -71,36 +74,36 @@ def import_csv_to_db(csv_path, table_name, conn, cursor):
                 print(f"{total_rows} 행 삽입 완료")
 
     conn.commit()
-    print(f"{csv_path}: 총 {total_rows} 행의 데이터를 {table_name} 테이블 import.")
+    print(f"{csv_path}: 총 {total_rows} 행의 데이터를 {table_name} 테이블에 import.")
 
-def main(txt_file_path):
-    # SQLite 데이터베이스 연결
+class ImportRequest(BaseModel):
+    txt_file_path: str
+
+def process_csv_files(txt_file_path: str):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # 텍스트 파일에서 CSV 파일 경로와 테이블 이름 읽기
-    with open(txt_file_path, 'r', encoding='utf-8') as txtfile:
-        lines = txtfile.read().splitlines()
+    with open(txt_file_path, 'r', encoding='utf-8') as file:
+        for line in file:
+            csv_path, table_name = line.strip().split(',')
+            if Path(csv_path).is_file():
+                import_csv_to_db(csv_path, table_name, conn, cursor)
+            else:
+                print(f"파일을 찾을 수 없습니다: {csv_path}")
 
-    # 각 CSV 파일을 SQLite에 삽입
-    for line in lines:
-        csv_path, table_name = line.split('|')
-        if Path(csv_path).is_file():
-            import_csv_to_db(csv_path, table_name, conn, cursor)
-        else:
-            print(f"파일을 찾을 수 없습니다: {csv_path}")
-
-    # 데이터베이스 연결 종료
     conn.close()
 
+@app.post("/import_csv")
+async def import_csv_api(request: ImportRequest):
+    if not request.txt_file_path:
+        raise HTTPException(status_code=400, detail="txt_file_path가 제공되지 않았습니다.")
+
+    try:
+        process_csv_files(request.txt_file_path)
+        return {"message": "CSV 파일 가져오기가 완료되었습니다."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print("사용법: python importCsv.py <텍스트_파일_경로>")
-        sys.exit(1)
-    
-    txt_file_path = sys.argv[1]
-    if not Path(txt_file_path).is_file():
-        print(f"오류: {txt_file_path} 파일이 존재하지 않습니다.")
-        sys.exit(1)
-    
-    main(txt_file_path)
+    import uvicorn
+    uvicorn.run(app, host=API_HOST, port=IMPORT_API_PORT)

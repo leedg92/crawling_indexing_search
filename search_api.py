@@ -1,11 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from pydantic import BaseModel
 from elasticsearch import Elasticsearch
 from sentence_transformers import SentenceTransformer
 from textblob import TextBlob
 from googletrans import Translator
 
-from config import ES_HOST, SENTENCE_TRANSFORMER_MODEL, ES_INDEX, API_HOST, API_PORT
+from config import ES_HOST, SENTENCE_TRANSFORMER_MODEL, API_HOST, SEARCH_API_PORT
 
 app = FastAPI()
 
@@ -20,62 +20,52 @@ translator = Translator()
 
 class SearchRequest(BaseModel):
     query: str
+    index: str
+    is_eng: str
 
 @app.post("/search")
 async def search(request: SearchRequest):
     query = request.query
+    index = request.index
+    is_eng = request.is_eng
     
-    # 쿼리를 영어로 번역
-    translated_query = translator.translate(query, dest='en').text
-    print(translated_query)
+    # 영어 번역 옵션이 켜져 있을 경우에만 번역
+    if is_eng.upper() == 'Y':
+        query = translator.translate(query, dest='en').text
+        print(f"번역된 쿼리: {query}")
+
+    
     query_embedding = model.encode(query).tolist()
     
-    # TextBlob을 사용하여 번역된 쿼리의 감성 분석
-    query_sentiment = TextBlob(translated_query).sentiment.polarity
+    # TextBlob을 사용하여 쿼리의 감성 분석
+    query_sentiment = TextBlob(query).sentiment.polarity
+
+    # 인덱스의 매핑 정보를 가져와 텍스트 필드 추출
+    mapping = es.indices.get_mapping(index=index)
+    text_fields = [field for field, properties in mapping[index]['mappings']['properties'].items() 
+                   if properties.get('type') == 'text']
+    print(f"추출된 텍스트 필드: {text_fields}")
 
     search_body = {
         "_source": {"excludes": ["embedding"]},
         "query": {
-            "bool": {
-                "must": [
-                    {
-                        "multi_match": {
-                            "query": translated_query,
-                            "fields": ["text^3", "summary^2"],
-                            "fuzziness": "AUTO",
-                            "minimum_should_match": "70%"
-                        }
-                    }
-                ],
-                "should": [
-                    {
-                        "script_score": {
-                            "query": {"match_all": {}},
-                            "script": {
-                                "source": "cosineSimilarity(params.query_vector, 'embedding') + 1.0",
-                                "params": {"query_vector": query_embedding}
-                            }
-                        }
-                    }
-                ],
-                "filter": [
-                    {
-                        "range": {
-                            "score": {
-                                "gte": 0,
-                                "lte": 5 if query_sentiment >= 0 else 2.5
-                            }
-                        }
-                    }
-                ]
+            "multi_match": {
+                "query": query,
+                "fields": text_fields,
+                "fuzziness": 2,  
+                "minimum_should_match": "50%"  
             }
-        },
-        "min_score": 2.0
+        }
     }
 
-    results = es.search(index=ES_INDEX, body=search_body)
+    
+    
+
+    results = es.search(index=index, body=search_body)
+    print(f"검색 쿼리: {query}")
+    print(f"검색 결과 수: {len(results['hits']['hits'])}")
     return results['hits']['hits']
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=API_HOST, port=API_PORT)
+    uvicorn.run(app, host=API_HOST, port=SEARCH_API_PORT)

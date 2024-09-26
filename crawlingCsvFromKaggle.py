@@ -12,13 +12,14 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import config
 from pathlib import Path
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 import zipfile
 import shutil
 import urllib.request
 import subprocess
+
+from config import DOWNLOAD_PATH, KAGGLE_LOGIN_ID, KAGGLE_LOGIN_PW, API_HOST, CRAWLING_API_PORT
 
 WAIT_TIME = 10  # 대기 시간 설정
 
@@ -64,7 +65,7 @@ class WebAutomation:
         self.wait = WebDriverWait(self.driver, WAIT_TIME)
 
     def create_download_directory(self):
-        base_path = Path(config.DOWNLOAD_PATH)
+        base_path = Path(DOWNLOAD_PATH)
         base_path.mkdir(parents=True, exist_ok=True)
         return base_path
 
@@ -75,11 +76,11 @@ class WebAutomation:
             
             # 이메일 입력
             email_input = self.wait.until(EC.presence_of_element_located((By.NAME, "email")))
-            email_input.send_keys(config.KAGGLE_LOGIN_ID)
+            email_input.send_keys(KAGGLE_LOGIN_ID)
             
             # 비밀번호 입력
             password_input = self.wait.until(EC.presence_of_element_located((By.NAME, "password")))
-            password_input.send_keys(config.KAGGLE_LOGIN_PW)
+            password_input.send_keys(KAGGLE_LOGIN_PW)
             
             # 로그인 버튼 클릭
             login_button = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
@@ -157,7 +158,7 @@ class WebAutomation:
                     # 데이터셋 제목 가져오기
                     dataset_title = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "h1"))).text
                     
-                    # ZIP 파일 다운로드 위치 변경
+                    # ZIP 파일 다운로드 경로
                     zip_path = archive_folder / 'archive.zip'
                     
                     # 다운로드 버튼 찾기 및 클릭
@@ -235,7 +236,7 @@ async def crawl_kaggle(request: SearchRequest):
             if web_automation.search_and_downloadCSV(request):
                 # 텍스트 파일 경로
                 folder_name = f"{datetime.now().strftime('%Y%m%d%H%M')}_{request.search_query}_{request.dataset_count}"
-                download_path = Path(config.DOWNLOAD_PATH) / folder_name
+                download_path = Path(DOWNLOAD_PATH) / folder_name
                 crawling_done_list_path = os.path.join(download_path, 'crawling_done_list.txt')
                 
                 return {
@@ -251,5 +252,6 @@ async def crawl_kaggle(request: SearchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == '__main__':
+    
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=20010)
+    uvicorn.run(app, host=API_HOST, port=CRAWLING_API_PORT)
