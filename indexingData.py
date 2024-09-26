@@ -129,7 +129,7 @@ def index_data(table_name, start_id=1):
             
             actions.append({
                 "_index": f"{table_name.lower()}_index",  # 소문자로 변경
-                "_id": str(row[0]),  # el_pri_key를 문자열로 변환
+                "_id": str(row[0]), 
                 "_source": doc
             })
         

@@ -143,7 +143,7 @@ class WebAutomation:
 
             csv_file_paths = []
 
-            # dataset_links의 길이가 요청한 dataset_count보다 적으면 예외 발생
+            # 요청한 dataset_count만큼 다운로드 받을게 없을때
             if len(dataset_links) < request.dataset_count:
                 raise ValueError(f"요청한 데이터셋 개수({request.dataset_count})보다 적은 데이터셋이 발견되었습니다: {len(dataset_links)}개")
 
@@ -165,7 +165,7 @@ class WebAutomation:
                     download_button = self.wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Download')]")))
                     download_button.click()
                     
-                    # 다운로드 완료 대기 (타임아웃 없이)
+                    # 다운로드 완료 대기 
                     while not zip_path.exists():
                         time.sleep(1)
                     
